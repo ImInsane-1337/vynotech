@@ -8,10 +8,6 @@
 
 --- Export Types ---
 
-if _G.CompKillerUI and _G.CompKillerUI.Destroy then
-    _G.CompKillerUI:Destroy()
-end
-
 export type cloneref = (target: Instance) -> Instance;
 
 export type Window = {
@@ -5070,15 +5066,6 @@ function Compkiller:ChangeHighlightColor(NewColor: Color3)
 end;
 
 function Compkiller.new(Config : Window)
-
-    -- Если уже есть старый UI, удаляем его
-    if _G.CompKiller_Instance and _G.CompKiller_Instance.Destroy then
-        _G.CompKiller_Instance:Destroy()
-    end
-
-    -- Сохраняем текущий UI в глобал
-    local self = setmetatable({}, Compkiller)
-    _G.CompKiller_Instance = self
 
 	if not Config.Scale then
 		if Compkiller:_IsMobile() then
