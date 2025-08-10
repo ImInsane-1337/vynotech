@@ -9056,4 +9056,27 @@ function Compkiller.newNotify()
 	return Compkiller.NOTIFY_CACHE;
 end;
 
+function Compkiller:Destroy()
+    self.Running = false
+    
+    -- Отключаем все подключения
+    if self.Connections then
+        for _, conn in pairs(self.Connections) do
+            if typeof(conn) == "RBXScriptConnection" then
+                conn:Disconnect()
+            end
+        end
+        self.Connections = {}
+    end
+
+    -- Удаляем UI
+    if self.GUI and self.GUI.Parent then
+        self.GUI:Destroy()
+        self.GUI = nil
+    end
+
+    print("[Compkiller] Destroyed and cleaned up.")
+end
+
+
 return Compkiller;
