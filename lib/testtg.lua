@@ -191,10 +191,6 @@ function Lib.isRunning()
     return _running
 end
 
-function Lib.setCompkillerAutoLoad(enabled)
-    _compkillerAutoLoad = not not enabled
-end
-
 function Lib.sayToChat(text)
     broadcastInGame(text)
 end
