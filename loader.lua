@@ -21,7 +21,7 @@ local BRANDING = {
 }
 
 local REMOTE_MANIFEST = {
-    Url = "https://raw.githubusercontent.com/ImInsane/vyno.tech/loader/supported.json",
+    Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported.json",
     Refresh = true,
     Required = false,
 }
@@ -34,9 +34,9 @@ local SCRIPT_CATALOG = {
         Description = "Small test entry for checking the loader when supported.json is unavailable.",
         Status = "Undetected",
         Version = SCRIPT_VERSION,
-        Url = "https://raw.githubusercontent.com/ImInsane/vyno.tech/loader/scripts/loader-self-test.lua",
+        Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/scripts/loader-self-test.lua",
         Image = {
-            Url = "https://raw.githubusercontent.com/ImInsane/vyno.tech/loader/assets/loader-self-test.png",
+            Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/assets/loader-self-test.png",
             FileName = "loader-self-test.png",
         },
     },
