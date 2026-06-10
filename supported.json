@@ -1,16 +1,16 @@
 {
-  "name": "vyno.tech supported games",
-  "version": "0.1.0",
+  "name": "gandoni",
+  "version": "1.1",
   "games": [
     {
-      "id": "loader-self-test",
-      "name": "Loader Self Test",
-      "category": "Universal",
-      "status": "Stable",
-      "version": "0.1.0",
-      "description": "Small test entry for checking the preloader, game list, banner card, and script execution.",
+      "id": "test",
+      "name": "Test Script",
+      "category": "Shooter/HvH",
+      "status": "Detected",
+      "version": "0.1 Legacy",
+      "description": "Test for my penis",
       "banner": "assets/loader-self-test.png",
-      "script": "scripts/loader-self-test.lua",
+      "script": "scripts/test.lua",
       "disabled": false
     }
   ]
