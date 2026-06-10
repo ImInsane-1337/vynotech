@@ -1,7 +1,7 @@
 {
-  "name": "vyno.tech supported executors",
-  "version": "0.1.0",
-  "supported": [],
+  "supported": [
+    "Cosmic"
+  ],
   "unsupported": [
     "Velocity"
   ]
