@@ -1,0 +1,17 @@
+{
+  "name": "vyno.tech supported games",
+  "version": "0.1.0",
+  "games": [
+    {
+      "id": "loader-self-test",
+      "name": "Loader Self Test",
+      "category": "Universal",
+      "status": "Stable",
+      "version": "0.1.0",
+      "description": "Small test entry for checking the preloader, game list, banner card, and script execution.",
+      "banner": "assets/loader-self-test.png",
+      "script": "scripts/loader-self-test.lua",
+      "disabled": false
+    }
+  ]
+}
