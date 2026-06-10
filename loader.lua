@@ -9,6 +9,11 @@ local PRELOADER_SIZE = UDim2.new(0, 300, 0, 160)
 local DISCORD_INVITE = "discord.gg/0000000"
 local WARNING_SOUND_ID = "rbxassetid://4590657391"
 
+local EXECUTOR_MANIFEST = {
+    Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported-executors.json",
+    Required = true,
+}
+
 local BRANDING = {
     Title = "Nebula Loader",
     Subtitle = "script hub",
@@ -23,24 +28,10 @@ local BRANDING = {
 local REMOTE_MANIFEST = {
     Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported.json",
     Refresh = true,
-    Required = false,
+    Required = true,
 }
 
--- Local fallback. The remote manifest uses the same fields.
-local SCRIPT_CATALOG = {
-    {
-        Category = "Universal",
-        Name = "Loader Self Test",
-        Description = "Small test entry for checking the loader when supported.json is unavailable.",
-        Status = "Undetected",
-        Version = SCRIPT_VERSION,
-        Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/scripts/loader-self-test.lua",
-        Image = {
-            Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/assets/loader-self-test.png",
-            FileName = "loader-self-test.png",
-        },
-    },
-}
+local SCRIPT_CATALOG = {}
 
 local CURRENT_CATALOG = SCRIPT_CATALOG
 
@@ -106,6 +97,14 @@ local state = {
     AssetCache = {},
     ScriptCache = {},
     ExecutorName = getExecutorName(),
+    ExecutorPolicy = {
+        Supported = {},
+        Unsupported = {},
+        Access = "unknown",
+        Matched = nil,
+        Version = "local",
+    },
+    FilteredGameCount = 0,
     SelectedCategory = nil,
     SelectedScript = nil,
     PendingEntry = nil,
@@ -439,9 +438,26 @@ local function getEntryId(entry)
     return sanitizeFileName(entry.Id or entry.id or entry.Name or entry.name or "script")
 end
 
+local function readBool(value, default)
+    if value == nil then
+        return default == true
+    end
+
+    if value == true or value == 1 then
+        return true
+    end
+
+    if type(value) == "string" then
+        local lower = value:lower()
+        return lower == "true" or lower == "yes" or lower == "1"
+    end
+
+    return false
+end
+
 local function normalizeStatus(status)
-    local value = tostring(status or "Undetected")
-    local lower = value:lower()
+    local value = tostring(status or "Undetected"):gsub("^%s+", ""):gsub("%s+$", "")
+    local lower = value:lower():gsub("%s+", " ")
 
     if lower == "detected" then
         return "Detected"
@@ -494,6 +510,14 @@ local function normalizeCatalogEntry(rawEntry, baseUrl)
     entry.Status = normalizeStatus(rawEntry.Status or rawEntry.status or "Undetected")
     entry.Version = rawEntry.Version or rawEntry.version or "0.0.0"
     entry.Disabled = rawEntry.Disabled == true or rawEntry.disabled == true
+    entry.AllowUnsupported = readBool(
+        rawEntry.AllowUnsupported
+            or rawEntry.allowUnsupported
+            or rawEntry["Allow-Unsupported"]
+            or rawEntry["allow-unsupported"],
+        false
+    )
+
     if isOnUpdateStatus(entry.Status) then
         entry.Disabled = true
     end
@@ -544,10 +568,6 @@ local function normalizeManifest(manifest)
         }
     end
 
-    if #catalog == 0 then
-        return nil, "Manifest has no supported games."
-    end
-
     return catalog
 end
 
@@ -580,6 +600,147 @@ local function fetchManifest()
     CURRENT_CATALOG = catalog
     state.Catalog = catalog
     return true
+end
+
+local function normalizeExecutorName(value)
+    return tostring(value or ""):lower():gsub("[^%w]", "")
+end
+
+local function appendExecutorRule(target, item)
+    if type(item) == "string" and item ~= "" then
+        table.insert(target, item)
+        return
+    end
+
+    if type(item) ~= "table" then
+        return
+    end
+
+    local name = item.name or item.Name or item.executor or item.Executor
+    if type(name) == "string" and name ~= "" then
+        table.insert(target, name)
+    end
+
+    local aliases = item.aliases or item.Aliases or item.names or item.Names
+    if type(aliases) == "table" then
+        for _, alias in ipairs(aliases) do
+            if type(alias) == "string" and alias ~= "" then
+                table.insert(target, alias)
+            end
+        end
+    end
+end
+
+local function readExecutorRules(source)
+    local rules = {}
+
+    if type(source) ~= "table" then
+        return rules
+    end
+
+    for _, item in ipairs(source) do
+        appendExecutorRule(rules, item)
+    end
+
+    return rules
+end
+
+local function findExecutorMatch(rules)
+    local executor = normalizeExecutorName(state.ExecutorName)
+    if executor == "" then
+        return nil
+    end
+
+    for _, rule in ipairs(rules or {}) do
+        local normalizedRule = normalizeExecutorName(rule)
+        if normalizedRule ~= "" and (executor:find(normalizedRule, 1, true) or normalizedRule:find(executor, 1, true)) then
+            return rule
+        end
+    end
+
+    return nil
+end
+
+local function refreshExecutorAccess()
+    local supportedMatch = findExecutorMatch(state.ExecutorPolicy.Supported)
+    if supportedMatch then
+        state.ExecutorPolicy.Access = "supported"
+        state.ExecutorPolicy.Matched = supportedMatch
+        return
+    end
+
+    local unsupportedMatch = findExecutorMatch(state.ExecutorPolicy.Unsupported)
+    if unsupportedMatch then
+        state.ExecutorPolicy.Access = "unsupported"
+        state.ExecutorPolicy.Matched = unsupportedMatch
+        return
+    end
+
+    state.ExecutorPolicy.Access = "unknown"
+    state.ExecutorPolicy.Matched = nil
+end
+
+local function fetchExecutorManifest()
+    if type(EXECUTOR_MANIFEST.Url) ~= "string" or EXECUTOR_MANIFEST.Url == "" then
+        refreshExecutorAccess()
+        return false, "Executor manifest URL is not configured."
+    end
+
+    local ok, body = pcall(function()
+        return game:HttpGet(EXECUTOR_MANIFEST.Url)
+    end)
+
+    if not ok or type(body) ~= "string" or body == "" then
+        refreshExecutorAccess()
+        return false, "Executor manifest download failed: " .. tostring(body)
+    end
+
+    local decodeOk, manifest = pcall(function()
+        return HttpService:JSONDecode(body)
+    end)
+
+    if not decodeOk or type(manifest) ~= "table" then
+        refreshExecutorAccess()
+        return false, "Executor manifest JSON is invalid: " .. tostring(manifest)
+    end
+
+    state.ExecutorPolicy.Supported = readExecutorRules(manifest.supported or manifest.Supported or manifest.supportedExecutors)
+    state.ExecutorPolicy.Unsupported = readExecutorRules(manifest.unsupported or manifest.Unsupported or manifest.blacklist or manifest.Blacklist)
+    state.ExecutorPolicy.Version = manifest.version or manifest.Version or "unknown"
+    refreshExecutorAccess()
+
+    return true
+end
+
+local function canEntryRunOnExecutor(entry)
+    if state.ExecutorPolicy.Access == "supported" then
+        return true
+    end
+
+    if state.ExecutorPolicy.Access == "unsupported" then
+        return entry.AllowUnsupported == true
+    end
+
+    return true
+end
+
+local function filterCatalogForExecutor(catalog)
+    if type(catalog) ~= "table" then
+        return {}, 0
+    end
+
+    local filtered = {}
+    local hidden = 0
+
+    for _, entry in ipairs(catalog) do
+        if canEntryRunOnExecutor(entry) then
+            table.insert(filtered, entry)
+        else
+            hidden += 1
+        end
+    end
+
+    return filtered, hidden
 end
 
 local function httpGetText(url)
@@ -780,10 +941,66 @@ local function createPreloader()
     stroke.Transparency = 0.05
     stroke.Parent = frame
 
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(17, 17, 20)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 12)),
+    })
+    gradient.Rotation = 90
+    gradient.Parent = frame
+
+    local brand = Instance.new("TextLabel")
+    brand.BackgroundTransparency = 1
+    brand.Position = UDim2.new(0, 18, 0, 14)
+    brand.Size = UDim2.new(0, 118, 0, 20)
+    brand.Font = Enum.Font.GothamBold
+    brand.RichText = true
+    brand.Text = '<font color="rgb(0,85,254)">vyno</font><font color="rgb(245,245,245)">.tech</font>'
+    brand.TextColor3 = Color3.fromRGB(245, 245, 245)
+    brand.TextSize = 17
+    brand.TextXAlignment = Enum.TextXAlignment.Left
+    brand.Parent = frame
+
+    local accent = Instance.new("Frame")
+    accent.Position = UDim2.new(0, 18, 0, 37)
+    accent.Size = UDim2.new(0, 54, 0, 2)
+    accent.BorderSizePixel = 0
+    accent.BackgroundColor3 = Color3.fromRGB(0, 85, 254)
+    accent.Parent = frame
+
+    local executorPill = Instance.new("Frame")
+    executorPill.AnchorPoint = Vector2.new(1, 0)
+    executorPill.Position = UDim2.new(1, -16, 0, 15)
+    executorPill.Size = UDim2.new(0, 108, 0, 24)
+    executorPill.BorderSizePixel = 0
+    executorPill.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    executorPill.Parent = frame
+
+    local executorCorner = Instance.new("UICorner")
+    executorCorner.CornerRadius = UDim.new(0, 6)
+    executorCorner.Parent = executorPill
+
+    local executorStroke = Instance.new("UIStroke")
+    executorStroke.Color = Color3.fromRGB(35, 35, 42)
+    executorStroke.Transparency = 0.15
+    executorStroke.Parent = executorPill
+
+    local executorText = Instance.new("TextLabel")
+    executorText.BackgroundTransparency = 1
+    executorText.Position = UDim2.new(0, 8, 0, 0)
+    executorText.Size = UDim2.new(1, -16, 1, 0)
+    executorText.Font = Enum.Font.Gotham
+    executorText.Text = tostring(state.ExecutorName)
+    executorText.TextColor3 = Color3.fromRGB(150, 150, 158)
+    executorText.TextSize = 11
+    executorText.TextXAlignment = Enum.TextXAlignment.Center
+    executorText.TextTruncate = Enum.TextTruncate.AtEnd
+    executorText.Parent = executorPill
+
     local logoHolder = Instance.new("Frame")
     logoHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-    logoHolder.Position = UDim2.new(0.5, 0, 0, 58)
-    logoHolder.Size = UDim2.new(0, 62, 0, 62)
+    logoHolder.Position = UDim2.new(0.5, 0, 0, 74)
+    logoHolder.Size = UDim2.new(0, 56, 0, 56)
     logoHolder.BorderSizePixel = 0
     logoHolder.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
     logoHolder.Parent = frame
@@ -803,7 +1020,7 @@ local function createPreloader()
     logoText.Font = Enum.Font.GothamBold
     logoText.Text = "v"
     logoText.TextColor3 = Color3.fromRGB(245, 245, 245)
-    logoText.TextSize = 30
+    logoText.TextSize = 28
     logoText.Parent = logoHolder
 
     local logoAsset = resolveImageAsset(BRANDING.Logo)
@@ -821,7 +1038,7 @@ local function createPreloader()
 
     local status = Instance.new("TextLabel")
     status.BackgroundTransparency = 1
-    status.Position = UDim2.new(0, 18, 0, 102)
+    status.Position = UDim2.new(0, 18, 0, 108)
     status.Size = UDim2.new(1, -36, 0, 18)
     status.Font = Enum.Font.Gotham
     status.Text = "Starting..."
@@ -832,7 +1049,7 @@ local function createPreloader()
     status.Parent = frame
 
     local track = Instance.new("Frame")
-    track.Position = UDim2.new(0, 24, 1, -26)
+    track.Position = UDim2.new(0, 24, 1, -22)
     track.Size = UDim2.new(1, -48, 0, 6)
     track.BorderSizePixel = 0
     track.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
@@ -971,7 +1188,6 @@ local function fadeInWindow(window)
 end
 
 local runSelected
-local copySelectedLoadstring
 
 local function mountGameBanner(library, section, entry)
     if type(library) ~= "table" or type(section) ~= "table" or type(section.items) ~= "table" then
@@ -985,9 +1201,9 @@ local function mountGameBanner(library, section, entry)
 
     local card = library:create("Frame", {
         Parent = parent,
-        Size = UDim2.new(1, -8, 0, 152),
+        Size = UDim2.new(1, -8, 0, 132),
         BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(18, 18, 21),
+        BackgroundColor3 = Color3.fromRGB(6, 7, 10),
         ClipsDescendants = true,
     })
 
@@ -1010,7 +1226,7 @@ local function mountGameBanner(library, section, entry)
     if imageAsset then
         library:create("ImageLabel", {
             Parent = card,
-            BackgroundTransparency = 1,
+            BackgroundColor3 = Color3.fromRGB(6, 7, 10),
             Size = UDim2.new(1, 0, 1, 0),
             Image = imageAsset,
             ScaleType = Enum.ScaleType.Fit,
@@ -1026,40 +1242,6 @@ local function mountGameBanner(library, section, entry)
             TextSize = 48,
         })
     end
-
-    local shade = library:create("Frame", {
-        Parent = card,
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.38,
-        Size = UDim2.new(1, 0, 1, 0),
-        BorderSizePixel = 0,
-    })
-
-    local title = library:create("TextLabel", {
-        Parent = shade,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 12, 1, -45),
-        Size = UDim2.new(1, -24, 0, 20),
-        Font = Enum.Font.GothamBold,
-        Text = tostring(entry.Name or "Unnamed game"),
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 16,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    })
-
-    library:create("TextLabel", {
-        Parent = shade,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 12, 1, -24),
-        Size = UDim2.new(1, -24, 0, 15),
-        Font = Enum.Font.Gotham,
-        Text = tostring(entry.Category or "Games"),
-        TextColor3 = Color3.fromRGB(170, 170, 178),
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-    })
 
     return card
 end
@@ -1169,15 +1351,6 @@ local function createGameTab(library, window, entry)
             state.SelectedCategory = tostring(entry.Category or "Games")
             state.SelectedScript = tostring(entry.Name or "Game")
             runSelected()
-        end,
-    })
-
-    actionsSection:button({
-        name = "Copy Loadstring",
-        callback = function()
-            state.SelectedCategory = tostring(entry.Category or "Games")
-            state.SelectedScript = tostring(entry.Name or "Game")
-            copySelectedLoadstring()
         end,
     })
 end
@@ -1389,6 +1562,16 @@ local function executeEntry(entry)
         return
     end
 
+    if not canEntryRunOnExecutor(entry) then
+        setStatus("Unsupported executor")
+        notify(
+            SCRIPT_NAME,
+            tostring(state.ExecutorName) .. " is blacklisted for this script.",
+            5
+        )
+        return
+    end
+
     if isOnUpdateStatus(entry.Status) then
         setStatus("On update: " .. tostring(entry.Name))
         notify(SCRIPT_NAME, "This script is on update and cannot be loaded yet.", 5)
@@ -1505,34 +1688,6 @@ runSelected = function()
     executeEntry(entry)
 end
 
-copySelectedLoadstring = function()
-    local entry = findEntry(state.SelectedCategory, state.SelectedScript)
-    if not entry then
-        notify(SCRIPT_NAME, "Select a remote script first.", 4)
-        return
-    end
-
-    if type(entry.Url) ~= "string" or entry.Url == "" then
-        notify(SCRIPT_NAME, "Selected script has no remote URL.", 4)
-        return
-    end
-
-    if type(setclipboard) ~= "function" then
-        notify(SCRIPT_NAME, "setclipboard is not available.", 4)
-        return
-    end
-
-    local escapedUrl = entry.Url:gsub("\\", "\\\\"):gsub("\"", "\\\"")
-    local payload = "loadstring(game:HttpGet(\"" .. escapedUrl .. "\"))()"
-    local ok, err = pcall(setclipboard, payload)
-
-    if ok then
-        notify(SCRIPT_NAME, "Copied loadstring for " .. tostring(entry.Name), 4)
-    else
-        notify(SCRIPT_NAME, "Clipboard failed: " .. tostring(err), 5)
-    end
-end
-
 local function createUi(library)
     local window = library:window({
         name = "vyno.",
@@ -1569,7 +1724,9 @@ local function createUi(library)
 
         section:label({
             name = "No games loaded",
-            info = "supported.json did not return any game entries.",
+            info = state.FilteredGameCount > 0
+                and ("No scripts are available for " .. tostring(state.ExecutorName) .. ".")
+                or "supported.json did not return any game entries.",
         })
     else
         for _, entry in ipairs(catalog) do
@@ -1601,6 +1758,14 @@ local function createUi(library)
         end,
     })
 
+    loaderSection:button({
+        name = "Unload",
+        callback = function()
+            notify(SCRIPT_NAME, "Unloading loader.", 2)
+            task.delay(0.15, unload)
+        end,
+    })
+
     fadeInWindow(window)
 
     task.defer(function()
@@ -1609,7 +1774,7 @@ local function createUi(library)
 end
 
 local function prepareCatalog()
-    setPreloader(0.16, "Getting game list...")
+    setPreloader(0.14, "Getting game list...")
 
     local manifestLoaded = false
     local manifestErr = nil
@@ -1634,7 +1799,22 @@ local function prepareCatalog()
         debugWarn("manifest fallback:", manifestErr)
     end
 
-    setPreloader(0.34, "Caching game images...")
+    setPreloader(0.28, "Checking executor...")
+
+    local executorLoaded, executorErr = fetchExecutorManifest()
+    if not executorLoaded then
+        if EXECUTOR_MANIFEST.Required then
+            return false, executorErr
+        end
+
+        debugWarn("executor manifest fallback:", executorErr)
+    end
+
+    local filteredCatalog, hiddenCount = filterCatalogForExecutor(state.Catalog or CURRENT_CATALOG)
+    state.Catalog = filteredCatalog
+    state.FilteredGameCount = hiddenCount
+
+    setPreloader(0.42, "Caching game images...")
 
     local catalog = state.Catalog or CURRENT_CATALOG
     local total = math.max(#catalog, 1)
@@ -1649,11 +1829,11 @@ local function prepareCatalog()
             end
         end
 
-        setPreloader(0.34 + (index / total) * 0.22, "Caching image " .. tostring(index) .. "/" .. tostring(total))
+        setPreloader(0.42 + (index / total) * 0.18, "Caching image " .. tostring(index) .. "/" .. tostring(total))
         task.wait()
     end
 
-    setPreloader(0.58, "Preparing scripts...")
+    setPreloader(0.64, "Preparing scripts...")
 
     for index, entry in ipairs(catalog) do
         local ok, err = cacheScript(entry)
@@ -1661,7 +1841,7 @@ local function prepareCatalog()
             debugWarn("script cache failed:", entry.Name, err)
         end
 
-        setPreloader(0.58 + (index / total) * 0.18, "Preparing script " .. tostring(index) .. "/" .. tostring(total))
+        setPreloader(0.64 + (index / total) * 0.14, "Preparing script " .. tostring(index) .. "/" .. tostring(total))
         task.wait()
     end
 

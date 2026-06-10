@@ -1,0 +1,8 @@
+{
+  "name": "vyno.tech supported executors",
+  "version": "0.1.0",
+  "supported": [],
+  "unsupported": [
+    "Velocity"
+  ]
+}
