@@ -5,7 +5,9 @@ local LIBRARY_URL = "https://raw.githubusercontent.com/i77lhm/Libraries/refs/hea
 local ASSET_FOLDER = "nebula_loader/assets"
 local SCRIPT_FOLDER = "nebula_loader/scripts"
 local MAIN_WINDOW_SIZE = UDim2.new(0, 720, 0, 565)
-local PRELOADER_SIZE = UDim2.new(0, 330, 0, 210)
+local PRELOADER_SIZE = UDim2.new(0, 300, 0, 160)
+local DISCORD_INVITE = "discord.gg/0000000"
+local WARNING_SOUND_ID = "rbxassetid://4590657391"
 
 local BRANDING = {
     Title = "Nebula Loader",
@@ -28,28 +30,15 @@ local REMOTE_MANIFEST = {
 local SCRIPT_CATALOG = {
     {
         Category = "Universal",
-        Name = "Loader self-test",
-        Description = "Runs a tiny print so you can verify the loader works.",
-        Source = [[
-print("[nebula.loader] Self-test executed.")
-        ]],
-    },
-    {
-        Category = "Universal",
-        Name = "Player greeting",
-        Description = "Example embedded script that reads the local player name.",
-        Source = [[
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-print("[nebula.loader] Hello, " .. ((LocalPlayer and LocalPlayer.Name) or "player") .. ".")
-        ]],
-    },
-    {
-        Category = "Remote",
-        Name = "Replace with raw URL",
-        Description = "Template slot. Replace Url with your own raw script link, then set Disabled = false.",
-        Url = "https://raw.githubusercontent.com/your-name/your-repo/main/script.lua",
-        Disabled = true,
+        Name = "Loader Self Test",
+        Description = "Small test entry for checking the loader when supported.json is unavailable.",
+        Status = "Undetected",
+        Version = SCRIPT_VERSION,
+        Url = "https://raw.githubusercontent.com/ImInsane/vyno.tech/loader/scripts/loader-self-test.lua",
+        Image = {
+            Url = "https://raw.githubusercontent.com/ImInsane/vyno.tech/loader/assets/loader-self-test.png",
+            FileName = "loader-self-test.png",
+        },
     },
 }
 
@@ -60,9 +49,28 @@ local StarterGui = game:GetService("StarterGui")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
 
 local LocalPlayer = Players.LocalPlayer
 local globalEnv = (type(getgenv) == "function" and getgenv()) or _G
+
+local function getExecutorName()
+    if type(identifyexecutor) == "function" then
+        local ok, name = pcall(identifyexecutor)
+        if ok and type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    if type(getexecutorname) == "function" then
+        local ok, name = pcall(getexecutorname)
+        if ok and type(name) == "string" and name ~= "" then
+            return name
+        end
+    end
+
+    return "Unknown"
+end
 
 local previousState = globalEnv[STATE_KEY]
 if type(previousState) == "table" and type(previousState.Unload) == "function" then
@@ -75,7 +83,7 @@ local config = {
     },
     Loader = {
         AllowRemoteUrls = true,
-        RequireDoubleClick = true,
+        RequireDoubleClick = false,
         RespectPlaceLocks = true,
         AutoCloseAfterRun = false,
     },
@@ -97,6 +105,7 @@ local state = {
     ManifestMeta = nil,
     AssetCache = {},
     ScriptCache = {},
+    ExecutorName = getExecutorName(),
     SelectedCategory = nil,
     SelectedScript = nil,
     PendingEntry = nil,
@@ -163,6 +172,25 @@ local function notify(title, text, duration, allowWhenUnloaded)
 
         debugWarn("notification failed:", payload.Text)
     end)
+end
+
+local function playWarningSound()
+    local sound = Instance.new("Sound")
+    sound.SoundId = WARNING_SOUND_ID
+    sound.Volume = 0.75
+    sound.Parent = SoundService
+
+    local ok = pcall(function()
+        sound:Play()
+    end)
+
+    task.delay(5, function()
+        if sound then
+            sound:Destroy()
+        end
+    end)
+
+    return ok
 end
 
 local function disconnectAll()
@@ -284,7 +312,7 @@ end
 local function setFooter(text)
     local footer = state.Window and state.Window.items and state.Window.items["other_info"]
     if footer then
-        footer.Text = '<font color="rgb(72, 72, 73)">' .. text .. ', </font>' .. SCRIPT_NAME
+        footer.Text = '<font color="rgb(72, 72, 73)">' .. DISCORD_INVITE .. "</font>"
     end
 end
 
@@ -411,6 +439,51 @@ local function getEntryId(entry)
     return sanitizeFileName(entry.Id or entry.id or entry.Name or entry.name or "script")
 end
 
+local function normalizeStatus(status)
+    local value = tostring(status or "Undetected")
+    local lower = value:lower()
+
+    if lower == "detected" then
+        return "Detected"
+    elseif lower == "can be detected" or lower == "can_be_detected" or lower == "risk" then
+        return "Can be detected"
+    elseif lower == "undetected" then
+        return "Undetected"
+    elseif lower == "on update" or lower == "on_update" or lower == "updating" then
+        return "On update"
+    elseif lower == "discontinued" then
+        return "Discontinued"
+    end
+
+    return value
+end
+
+local function isOnUpdateStatus(status)
+    return normalizeStatus(status) == "On update"
+end
+
+local function isDiscontinuedStatus(status)
+    return normalizeStatus(status) == "Discontinued"
+end
+
+local function getStatusColor(status)
+    status = normalizeStatus(status)
+
+    if status == "Detected" then
+        return Color3.fromRGB(255, 68, 68)
+    elseif status == "Can be detected" then
+        return Color3.fromRGB(255, 202, 66)
+    elseif status == "Undetected" then
+        return Color3.fromRGB(72, 218, 118)
+    elseif status == "On update" then
+        return Color3.fromRGB(74, 144, 255)
+    elseif status == "Discontinued" then
+        return Color3.fromRGB(255, 28, 28)
+    end
+
+    return Color3.fromRGB(165, 165, 172)
+end
+
 local function normalizeCatalogEntry(rawEntry, baseUrl)
     local entry = {}
 
@@ -418,9 +491,12 @@ local function normalizeCatalogEntry(rawEntry, baseUrl)
     entry.Category = rawEntry.Category or rawEntry.category or rawEntry.Group or rawEntry.group or "Games"
     entry.Name = rawEntry.Name or rawEntry.name or rawEntry.Title or rawEntry.title or rawEntry.Game or rawEntry.game or "Unnamed script"
     entry.Description = rawEntry.Description or rawEntry.description or rawEntry.Info or rawEntry.info or "No description."
-    entry.Status = rawEntry.Status or rawEntry.status or "Unknown"
+    entry.Status = normalizeStatus(rawEntry.Status or rawEntry.status or "Undetected")
     entry.Version = rawEntry.Version or rawEntry.version or "0.0.0"
     entry.Disabled = rawEntry.Disabled == true or rawEntry.disabled == true
+    if isOnUpdateStatus(entry.Status) then
+        entry.Disabled = true
+    end
     entry.PlaceIds = rawEntry.PlaceIds or rawEntry.placeIds or rawEntry.PlaceIDs or rawEntry.places
     entry.Source = rawEntry.Source or rawEntry.source
     entry.Callback = rawEntry.Callback
@@ -706,8 +782,8 @@ local function createPreloader()
 
     local logoHolder = Instance.new("Frame")
     logoHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-    logoHolder.Position = UDim2.new(0.5, 0, 0.39, 0)
-    logoHolder.Size = UDim2.new(0, 70, 0, 70)
+    logoHolder.Position = UDim2.new(0.5, 0, 0, 58)
+    logoHolder.Size = UDim2.new(0, 62, 0, 62)
     logoHolder.BorderSizePixel = 0
     logoHolder.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
     logoHolder.Parent = frame
@@ -727,7 +803,7 @@ local function createPreloader()
     logoText.Font = Enum.Font.GothamBold
     logoText.Text = "v"
     logoText.TextColor3 = Color3.fromRGB(245, 245, 245)
-    logoText.TextSize = 34
+    logoText.TextSize = 30
     logoText.Parent = logoHolder
 
     local logoAsset = resolveImageAsset(BRANDING.Logo)
@@ -743,20 +819,9 @@ local function createPreloader()
         logoImage.Parent = logoHolder
     end
 
-    local title = Instance.new("TextLabel")
-    title.BackgroundTransparency = 1
-    title.Position = UDim2.new(0, 18, 0, 112)
-    title.Size = UDim2.new(1, -36, 0, 22)
-    title.Font = Enum.Font.GothamMedium
-    title.Text = BRANDING.Title or SCRIPT_NAME
-    title.TextColor3 = Color3.fromRGB(245, 245, 245)
-    title.TextSize = 15
-    title.TextXAlignment = Enum.TextXAlignment.Center
-    title.Parent = frame
-
     local status = Instance.new("TextLabel")
     status.BackgroundTransparency = 1
-    status.Position = UDim2.new(0, 18, 0, 139)
+    status.Position = UDim2.new(0, 18, 0, 102)
     status.Size = UDim2.new(1, -36, 0, 18)
     status.Font = Enum.Font.Gotham
     status.Text = "Starting..."
@@ -767,7 +832,7 @@ local function createPreloader()
     status.Parent = frame
 
     local track = Instance.new("Frame")
-    track.Position = UDim2.new(0, 24, 1, -34)
+    track.Position = UDim2.new(0, 24, 1, -26)
     track.Size = UDim2.new(1, -48, 0, 6)
     track.BorderSizePixel = 0
     track.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
@@ -948,7 +1013,7 @@ local function mountGameBanner(library, section, entry)
             BackgroundTransparency = 1,
             Size = UDim2.new(1, 0, 1, 0),
             Image = imageAsset,
-            ScaleType = Enum.ScaleType.Crop,
+            ScaleType = Enum.ScaleType.Fit,
         })
     else
         library:create("TextLabel", {
@@ -999,6 +1064,44 @@ local function mountGameBanner(library, section, entry)
     return card
 end
 
+local function mountStatusChip(library, section, entry)
+    if type(section) ~= "table" or type(section.items) ~= "table" or not section.items["elements"] then
+        return
+    end
+
+    local status = normalizeStatus(entry.Status)
+    local holder = library:create("Frame", {
+        Parent = section.items["elements"],
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 44),
+        BorderSizePixel = 0,
+    })
+
+    library:create("TextLabel", {
+        Parent = holder,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 0),
+        Size = UDim2.new(1, -10, 0, 18),
+        Font = Enum.Font.GothamMedium,
+        Text = "Status",
+        TextColor3 = Color3.fromRGB(245, 245, 245),
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    })
+
+    library:create("TextLabel", {
+        Parent = holder,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 20),
+        Size = UDim2.new(1, -10, 0, 18),
+        Font = Enum.Font.GothamMedium,
+        Text = status,
+        TextColor3 = getStatusColor(status),
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    })
+end
+
 local function createGameTab(library, window, entry)
     local Overview = window:tab({
         name = tostring(entry.Name or "Game"),
@@ -1041,10 +1144,7 @@ local function createGameTab(library, window, entry)
         info = tostring(entry.Description or "No description."),
     })
 
-    infoSection:label({
-        name = "Status",
-        info = tostring(entry.Status or "Unknown"),
-    })
+    mountStatusChip(library, infoSection, entry)
 
     infoSection:label({
         name = "Version",
@@ -1056,8 +1156,15 @@ local function createGameTab(library, window, entry)
         info = type(entry.PlaceIds) == "table" and table.concat(entry.PlaceIds, ", ") or "Universal",
     })
 
+    local runButtonName = "Run"
+    if isOnUpdateStatus(entry.Status) then
+        runButtonName = "On update"
+    elseif entry.Disabled then
+        runButtonName = "Disabled"
+    end
+
     actionsSection:button({
-        name = entry.Disabled and "Disabled" or "Run",
+        name = runButtonName,
         callback = function()
             state.SelectedCategory = tostring(entry.Category or "Games")
             state.SelectedScript = tostring(entry.Name or "Game")
@@ -1071,15 +1178,6 @@ local function createGameTab(library, window, entry)
             state.SelectedCategory = tostring(entry.Category or "Games")
             state.SelectedScript = tostring(entry.Name or "Game")
             copySelectedLoadstring()
-        end,
-    })
-
-    actionsSection:button({
-        name = "Clear Confirmation",
-        callback = function()
-            state.PendingEntry = nil
-            state.PendingAt = 0
-            setStatus("Confirmation cleared")
         end,
     })
 end
@@ -1291,9 +1389,15 @@ local function executeEntry(entry)
         return
     end
 
+    if isOnUpdateStatus(entry.Status) then
+        setStatus("On update: " .. tostring(entry.Name))
+        notify(SCRIPT_NAME, "This script is on update and cannot be loaded yet.", 5)
+        return
+    end
+
     if entry.Disabled then
         setStatus("Disabled: " .. tostring(entry.Name))
-        notify(SCRIPT_NAME, "Edit SCRIPT_CATALOG and set Disabled = false.", 5)
+        notify(SCRIPT_NAME, "This script is disabled in supported.json.", 5)
         return
     end
 
@@ -1366,7 +1470,26 @@ runSelected = function()
         return
     end
 
-    if config.Loader.RequireDoubleClick then
+    local discontinuedConfirmed = false
+    if isDiscontinuedStatus(entry.Status) then
+        local now = os.clock()
+        if state.PendingEntry ~= entry or now - state.PendingAt > 8 then
+            state.PendingEntry = entry
+            state.PendingAt = now
+            setStatus("Confirm discontinued: " .. tostring(entry.Name))
+            playWarningSound()
+            notify(
+                "Discontinued script",
+                "Run again within 8 seconds. This script is no longer supported and may be detected.",
+                8
+            )
+            return
+        end
+
+        discontinuedConfirmed = true
+    end
+
+    if not discontinuedConfirmed and config.Loader.RequireDoubleClick then
         local now = os.clock()
         if state.PendingEntry ~= entry or now - state.PendingAt > 5 then
             state.PendingEntry = entry
@@ -1410,30 +1533,11 @@ copySelectedLoadstring = function()
     end
 end
 
-local function initConfig(library, window)
-    if type(library.init_config) ~= "function" then
-        return
-    end
-
-    if type(listfiles) ~= "function" or type(readfile) ~= "function" or type(delfile) ~= "function" then
-        debugWarn("config init skipped: listfiles/readfile/delfile unavailable")
-        return
-    end
-
-    local ok, err = pcall(function()
-        library:init_config(window)
-    end)
-
-    if not ok then
-        debugWarn("config init failed:", err)
-    end
-end
-
 local function createUi(library)
     local window = library:window({
         name = "vyno.",
         suffix = "tech",
-        gameInfo = "Supported Games",
+        gameInfo = "Executor: " .. tostring(state.ExecutorName),
         size = MAIN_WINDOW_SIZE,
     })
 
@@ -1446,8 +1550,6 @@ local function createUi(library)
             library:update_theme("accent", Color3.fromRGB(0, 85, 254))
         end)
     end
-
-    mountBranding(library, window)
 
     window:seperator({ name = "Scripts" })
 
@@ -1477,85 +1579,21 @@ local function createUi(library)
 
     window:seperator({ name = "Settings" })
 
-    local Main, Session = window:tab({
+    local Main = window:tab({
         name = "Loader",
-        tabs = { "Main", "Session" },
+        tabs = { "Main" },
     })
 
     local settingsColumn = Main:column({})
-    local safetyColumn = Main:column({})
 
-    local interfaceSection = settingsColumn:section({
-        name = "Interface",
+    local loaderSection = settingsColumn:section({
+        name = "Loader",
         default = true,
         size = 1,
     })
 
-    local safetySection = safetyColumn:section({
-        name = "Safety",
-        side = "right",
-        default = true,
-        size = 1,
-    })
-
-    interfaceSection:toggle({
-        name = "Notifications",
-        seperator = true,
-        default = config.Interface.Notifications,
-        callback = function(value)
-            config.Interface.Notifications = value == true
-        end,
-    })
-
-    interfaceSection:toggle({
-        name = "Debug",
-        seperator = true,
-        default = config.Debug,
-        callback = function(value)
-            config.Debug = value == true
-        end,
-    })
-
-    interfaceSection:colorpicker({
-        name = "Accent",
-        seperator = true,
-        color = Color3.fromRGB(0, 85, 254),
-        callback = function(color)
-            if type(library.update_theme) == "function" then
-                library:update_theme("accent", color)
-            end
-        end,
-    })
-
-    safetySection:toggle({
-        name = "Remote URLs",
-        seperator = true,
-        default = config.Loader.AllowRemoteUrls,
-        callback = function(value)
-            config.Loader.AllowRemoteUrls = value == true
-        end,
-    })
-
-    safetySection:toggle({
-        name = "Double Click Run",
-        seperator = true,
-        default = config.Loader.RequireDoubleClick,
-        callback = function(value)
-            config.Loader.RequireDoubleClick = value == true
-        end,
-    })
-
-    safetySection:toggle({
-        name = "Respect Place Locks",
-        seperator = true,
-        default = config.Loader.RespectPlaceLocks,
-        callback = function(value)
-            config.Loader.RespectPlaceLocks = value == true
-        end,
-    })
-
-    safetySection:toggle({
-        name = "Auto Close After Run",
+    loaderSection:toggle({
+        name = "Auto Close at Run",
         seperator = true,
         default = config.Loader.AutoCloseAfterRun,
         callback = function(value)
@@ -1563,58 +1601,6 @@ local function createUi(library)
         end,
     })
 
-    local sessionColumn = Session:column({})
-    local metaColumn = Session:column({})
-
-    local statusSection = sessionColumn:section({
-        name = "Status",
-        default = true,
-        size = 1,
-    })
-
-    local metaSection = metaColumn:section({
-        name = "Manifest",
-        side = "right",
-        default = true,
-        size = 1,
-    })
-
-    state.Gui.StatusLabel = statusSection:label({
-        name = "Status",
-        info = "Ready",
-    })
-
-    state.Gui.StatsLabel = statusSection:label({
-        name = "Runs",
-        info = "Executed: 0 | Failed: 0",
-    })
-
-    statusSection:label({
-        name = "User",
-        info = LocalPlayer and LocalPlayer.Name or "unknown",
-    })
-
-    statusSection:button({
-        name = "Unload Loader",
-        callback = function()
-            notify(SCRIPT_NAME, "Unloading loader.", 2)
-            task.delay(0.15, unload)
-        end,
-    })
-
-    local manifestMeta = state.ManifestMeta or {}
-    metaSection:label({
-        name = tostring(manifestMeta.Name or "Local fallback"),
-        info = "Version: " .. tostring(manifestMeta.Version or SCRIPT_VERSION),
-    })
-
-    metaSection:label({
-        name = "Games",
-        info = tostring(#catalog),
-    })
-
-    initConfig(library, window)
-    updateStats()
     fadeInWindow(window)
 
     task.defer(function()
