@@ -1,48 +1,15 @@
-local SCRIPT_NAME = "nebula.loader"
-local SCRIPT_VERSION = "0.1.0"
-local STATE_KEY = "__NEBULA_SCRIPT_LOADER_STATE"
-local LIBRARY_URL = "https://raw.githubusercontent.com/i77lhm/Libraries/refs/heads/main/Millenium/Library.lua"
-local ASSET_FOLDER = "nebula_loader/assets"
-local SCRIPT_FOLDER = "nebula_loader/scripts"
-local MAIN_WINDOW_SIZE = UDim2.new(0, 720, 0, 565)
-local PRELOADER_SIZE = UDim2.new(0, 300, 0, 160)
-local DISCORD_INVITE = "discord.gg/0000000"
-local WARNING_SOUND_ID = "rbxassetid://4590657391"
+local name = "nebula.loader"
+local version = "0.1.0"
+local assetFolder = "nebula_loader/assets"
+local scriptFolder = "nebula_loader/scripts"
+local title2 = "discord.gg/placeholder!!!!!"
 
-local EXECUTOR_MANIFEST = {
-    Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported-executors.json",
-    Required = true,
-}
-
-local BRANDING = {
-    Title = "Nebula Loader",
-    Subtitle = "script hub",
-    Logo = {
-        -- Asset = "rbxassetid://1234567890",
-        -- Url = "https://raw.githubusercontent.com/user/repo/main/assets/logo.png",
-        FileName = "logo.png",
-        Refresh = false,
-    },
-}
-
-local REMOTE_MANIFEST = {
-    Url = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported.json",
-    Refresh = true,
-    Required = true,
-}
-
-local SCRIPT_CATALOG = {}
-
-local CURRENT_CATALOG = SCRIPT_CATALOG
-
-local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local SoundService = game:GetService("SoundService")
 
-local LocalPlayer = Players.LocalPlayer
 local globalEnv = (type(getgenv) == "function" and getgenv()) or _G
 
 local function getExecutorName()
@@ -63,7 +30,7 @@ local function getExecutorName()
     return "Unknown"
 end
 
-local previousState = globalEnv[STATE_KEY]
+local previousState = globalEnv.__NEBULA_SCRIPT_LOADER_STATE
 if type(previousState) == "table" and type(previousState.Unload) == "function" then
     pcall(previousState.Unload)
 end
@@ -82,8 +49,8 @@ local config = {
 }
 
 local state = {
-    Name = SCRIPT_NAME,
-    Version = SCRIPT_VERSION,
+    Name = name,
+    Version = version,
     Config = config,
     Connections = {},
     LoadedAt = os.clock(),
@@ -92,10 +59,7 @@ local state = {
     Window = nil,
     Preloader = nil,
     Notifications = nil,
-    Catalog = CURRENT_CATALOG,
-    ManifestMeta = nil,
-    AssetCache = {},
-    ScriptCache = {},
+    Catalog = {},
     ExecutorName = getExecutorName(),
     ExecutorPolicy = {
         Supported = {},
@@ -116,11 +80,11 @@ local state = {
     Gui = {},
 }
 
-globalEnv[STATE_KEY] = state
+globalEnv.__NEBULA_SCRIPT_LOADER_STATE = state
 
 local function debugWarn(...)
     if config.Debug then
-        warn("[" .. SCRIPT_NAME .. "]", ...)
+        warn("[" .. name .. "]", ...)
     end
 end
 
@@ -134,7 +98,7 @@ local function notify(title, text, duration, allowWhenUnloaded)
         if type(notifications) == "table" and type(notifications.create_notification) == "function" then
             local ok, err = pcall(function()
                 notifications:create_notification({
-                    name = title or SCRIPT_NAME,
+                    name = title or name,
                     info = text or "",
                     lifetime = duration or 4,
                 })
@@ -148,7 +112,7 @@ local function notify(title, text, duration, allowWhenUnloaded)
         end
 
         local payload = {
-            Title = title or SCRIPT_NAME,
+            Title = title or name,
             Text = text or "",
             Duration = duration or 4,
         }
@@ -175,7 +139,7 @@ end
 
 local function playWarningSound()
     local sound = Instance.new("Sound")
-    sound.SoundId = WARNING_SOUND_ID
+    sound.SoundId = "rbxassetid://4590657391"
     sound.Volume = 0.75
     sound.Parent = SoundService
 
@@ -227,8 +191,8 @@ local function unload()
         end)
     end
 
-    if globalEnv[STATE_KEY] == state then
-        globalEnv[STATE_KEY] = nil
+    if globalEnv.__NEBULA_SCRIPT_LOADER_STATE == state then
+        globalEnv.__NEBULA_SCRIPT_LOADER_STATE = nil
     end
 end
 
@@ -258,30 +222,30 @@ end
 local function loadNebula()
     local ready, missing = getExecutorReadiness()
     if not ready then
-        notify(SCRIPT_NAME, "Executor is missing: " .. table.concat(missing, ", "), 6, true)
+        notify(name, "Executor is missing: " .. table.concat(missing, ", "), 6, true)
         return nil
     end
 
     local ok, source = pcall(function()
-        return game:HttpGet(LIBRARY_URL)
+        return game:HttpGet("https://raw.githubusercontent.com/i77lhm/Libraries/refs/heads/main/Millenium/Library.lua")
     end)
 
     if not ok or type(source) ~= "string" or source == "" then
-        notify(SCRIPT_NAME, "Failed to download Nebula UI.", 5, true)
+        notify(name, "Failed to download Nebula UI.", 5, true)
         debugWarn("library download failed:", source)
         return nil
     end
 
     local chunkOk, chunk = pcall(loadstring, source)
     if not chunkOk or type(chunk) ~= "function" then
-        notify(SCRIPT_NAME, "Failed to compile Nebula UI.", 5, true)
+        notify(name, "Failed to compile Nebula UI.", 5, true)
         debugWarn("library compile failed:", chunk)
         return nil
     end
 
     local libraryOk, library = pcall(chunk)
     if not libraryOk or type(library) ~= "table" then
-        notify(SCRIPT_NAME, "Failed to initialize Nebula UI.", 5, true)
+        notify(name, "Failed to initialize Nebula UI.", 5, true)
         debugWarn("library init failed:", library)
         return nil
     end
@@ -311,7 +275,7 @@ end
 local function setFooter(text)
     local footer = state.Window and state.Window.items and state.Window.items["other_info"]
     if footer then
-        footer.Text = '<font color="rgb(72, 72, 73)">' .. DISCORD_INVITE .. "</font>"
+        footer.Text = '<font color="rgb(72, 72, 73)">' .. title2 .. "</font>"
     end
 end
 
@@ -331,8 +295,8 @@ local function ensureAssetFolder()
     end
 
     pcall(makefolder, "nebula_loader")
-    pcall(makefolder, ASSET_FOLDER)
-    pcall(makefolder, SCRIPT_FOLDER)
+    pcall(makefolder, assetFolder)
+    pcall(makefolder, scriptFolder)
     return true
 end
 
@@ -380,7 +344,7 @@ local function resolveImageAsset(image)
     end
 
     local fileName = sanitizeFileName(image.FileName or image.Name or "asset.png")
-    local filePath = ASSET_FOLDER .. "/" .. fileName
+    local filePath = assetFolder .. "/" .. fileName
     local shouldDownload = image.Refresh == true
 
     if type(isfile) ~= "function" or not isfile(filePath) then
@@ -535,7 +499,7 @@ local function normalizeCatalogEntry(rawEntry, baseUrl)
         entry.Image = {
             Url = imageUrl,
             FileName = getEntryId(entry) .. "-" .. sanitizeFileName(imagePath):gsub("^_+", ""),
-            Refresh = REMOTE_MANIFEST.Refresh == true,
+            Refresh = true,
         }
     end
 
@@ -547,8 +511,8 @@ local function normalizeManifest(manifest)
 
     if type(manifest) == "table" then
         local baseUrl = manifest.baseUrl or manifest.BaseUrl or manifest.baseURL or manifest.rawBaseUrl
-        if (type(baseUrl) ~= "string" or baseUrl == "") and type(REMOTE_MANIFEST.Url) == "string" then
-            baseUrl = REMOTE_MANIFEST.Url:match("(.*/)")
+        if type(baseUrl) ~= "string" or baseUrl == "" then
+            baseUrl = ("https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported.json"):match("(.*/)")
         end
 
         local games = manifest.games or manifest.Games or manifest.supported or manifest.Supported or manifest.scripts or manifest.Scripts or manifest
@@ -561,23 +525,16 @@ local function normalizeManifest(manifest)
             end
         end
 
-        state.ManifestMeta = {
-            Name = manifest.name or manifest.Name or "Remote manifest",
-            Version = manifest.version or manifest.Version or "unknown",
-            BaseUrl = baseUrl,
-        }
     end
 
     return catalog
 end
 
 local function fetchManifest()
-    if type(REMOTE_MANIFEST.Url) ~= "string" or REMOTE_MANIFEST.Url == "" then
-        return false, "Remote manifest URL is not configured."
-    end
+    local manifestUrl = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported.json"
 
     local ok, body = pcall(function()
-        return game:HttpGet(REMOTE_MANIFEST.Url)
+        return game:HttpGet(manifestUrl)
     end)
 
     if not ok or type(body) ~= "string" or body == "" then
@@ -597,7 +554,6 @@ local function fetchManifest()
         return false, err
     end
 
-    CURRENT_CATALOG = catalog
     state.Catalog = catalog
     return true
 end
@@ -681,13 +637,10 @@ local function refreshExecutorAccess()
 end
 
 local function fetchExecutorManifest()
-    if type(EXECUTOR_MANIFEST.Url) ~= "string" or EXECUTOR_MANIFEST.Url == "" then
-        refreshExecutorAccess()
-        return false, "Executor manifest URL is not configured."
-    end
+    local manifestUrl = "https://raw.githubusercontent.com/ImInsane-1337/vynotech/loader/supported-executors.json"
 
     local ok, body = pcall(function()
-        return game:HttpGet(EXECUTOR_MANIFEST.Url)
+        return game:HttpGet(manifestUrl)
     end)
 
     if not ok or type(body) ~= "string" or body == "" then
@@ -786,8 +739,8 @@ local function cacheScript(entry)
         return false, folderErr
     end
 
-    local filePath = SCRIPT_FOLDER .. "/" .. getEntryId(entry) .. ".lua"
-    local shouldDownload = REMOTE_MANIFEST.Refresh == true
+    local filePath = scriptFolder .. "/" .. getEntryId(entry) .. ".lua"
+    local shouldDownload = true
 
     if type(isfile) ~= "function" or not isfile(filePath) then
         shouldDownload = true
@@ -811,93 +764,7 @@ local function cacheScript(entry)
     end
 
     entry.Source = source
-    state.ScriptCache[entry.Id] = filePath
     return true
-end
-
-local function mountBranding(library, window)
-    if type(library) ~= "table" or type(library.create) ~= "function" then
-        return
-    end
-
-    local main = window and window.items and window.items["main"]
-    if not main then
-        return
-    end
-
-    local imageAsset, imageErr = resolveImageAsset(BRANDING.Logo)
-    if imageErr then
-        debugWarn("branding image skipped:", imageErr)
-    end
-
-    local holder = library:create("Frame", {
-        Parent = main,
-        AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, -14, 0, 10),
-        Size = UDim2.new(0, 176, 0, 38),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(18, 18, 21),
-        BackgroundTransparency = 0.05,
-        ZIndex = 3,
-    })
-
-    library:create("UICorner", {
-        Parent = holder,
-        CornerRadius = UDim.new(0, 7),
-    })
-
-    library:create("UIStroke", {
-        Parent = holder,
-        Color = Color3.fromRGB(35, 35, 42),
-        Transparency = 0.15,
-    })
-
-    local textOffset = imageAsset and 46 or 12
-
-    if imageAsset then
-        local image = library:create("ImageLabel", {
-            Parent = holder,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, 8, 0.5, -14),
-            Size = UDim2.new(0, 28, 0, 28),
-            Image = imageAsset,
-            ScaleType = Enum.ScaleType.Fit,
-            ZIndex = 4,
-        })
-
-        library:create("UICorner", {
-            Parent = image,
-            CornerRadius = UDim.new(0, 6),
-        })
-    end
-
-    library:create("TextLabel", {
-        Parent = holder,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, textOffset, 0, 5),
-        Size = UDim2.new(1, -textOffset - 8, 0, 15),
-        Font = Enum.Font.GothamMedium,
-        Text = BRANDING.Title or SCRIPT_NAME,
-        TextColor3 = Color3.fromRGB(245, 245, 245),
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 4,
-    })
-
-    library:create("TextLabel", {
-        Parent = holder,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, textOffset, 0, 20),
-        Size = UDim2.new(1, -textOffset - 8, 0, 13),
-        Font = Enum.Font.Gotham,
-        Text = BRANDING.Subtitle or SCRIPT_VERSION,
-        TextColor3 = Color3.fromRGB(130, 130, 136),
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 4,
-    })
 end
 
 local function tween(instance, properties, duration, style)
@@ -927,7 +794,7 @@ local function createPreloader()
     local frame = Instance.new("Frame")
     frame.AnchorPoint = Vector2.new(0.5, 0.5)
     frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.Size = PRELOADER_SIZE
+    frame.Size = UDim2.new(0, 300, 0, 160)
     frame.BorderSizePixel = 0
     frame.BackgroundColor3 = Color3.fromRGB(14, 14, 16)
     frame.Parent = gui
@@ -1023,19 +890,6 @@ local function createPreloader()
     logoText.TextSize = 28
     logoText.Parent = logoHolder
 
-    local logoAsset = resolveImageAsset(BRANDING.Logo)
-    if logoAsset then
-        logoText.Visible = false
-
-        local logoImage = Instance.new("ImageLabel")
-        logoImage.BackgroundTransparency = 1
-        logoImage.Position = UDim2.new(0, 10, 0, 10)
-        logoImage.Size = UDim2.new(1, -20, 1, -20)
-        logoImage.Image = logoAsset
-        logoImage.ScaleType = Enum.ScaleType.Fit
-        logoImage.Parent = logoHolder
-    end
-
     local status = Instance.new("TextLabel")
     status.BackgroundTransparency = 1
     status.Position = UDim2.new(0, 18, 0, 108)
@@ -1106,7 +960,7 @@ local function finishPreloader()
     setPreloader(1, "Opening interface...")
 
     if preloader.Frame then
-        tween(preloader.Frame, { Size = MAIN_WINDOW_SIZE }, 0.35, Enum.EasingStyle.Quint)
+        tween(preloader.Frame, { Size = UDim2.new(0, 720, 0, 565) }, 0.35, Enum.EasingStyle.Quint)
     end
 
     task.wait(0.22)
@@ -1363,45 +1217,8 @@ local function updateStats()
     )
 end
 
-local function uniqueCategories()
-    local seen = {}
-    local categories = {}
-    local catalog = state.Catalog or CURRENT_CATALOG
-
-    for _, entry in ipairs(catalog) do
-        local category = tostring(entry.Category or "Other")
-        if not seen[category] then
-            seen[category] = true
-            table.insert(categories, category)
-        end
-    end
-
-    if #categories == 0 then
-        table.insert(categories, "Empty")
-    end
-
-    return categories
-end
-
-local function scriptsForCategory(category)
-    local scripts = {}
-    local catalog = state.Catalog or CURRENT_CATALOG
-
-    for _, entry in ipairs(catalog) do
-        if tostring(entry.Category or "Other") == category then
-            table.insert(scripts, tostring(entry.Name or "Unnamed script"))
-        end
-    end
-
-    if #scripts == 0 then
-        table.insert(scripts, "No scripts")
-    end
-
-    return scripts
-end
-
 local function findEntry(category, name)
-    local catalog = state.Catalog or CURRENT_CATALOG
+    local catalog = state.Catalog or {}
 
     for _, entry in ipairs(catalog) do
         if tostring(entry.Category or "Other") == category and tostring(entry.Name or "Unnamed script") == name then
@@ -1428,67 +1245,6 @@ local function hasPlaceAccess(entry)
     end
 
     return false
-end
-
-local function describeEntry(entry)
-    if not entry then
-        return "Select a script from the list."
-    end
-
-    local sourceType = "missing source"
-    if type(entry.Callback) == "function" then
-        sourceType = "callback"
-    elseif type(entry.Source) == "string" and entry.Source ~= "" then
-        sourceType = "embedded"
-    elseif type(entry.Url) == "string" and entry.Url ~= "" then
-        sourceType = "remote URL"
-    end
-
-    local disabled = entry.Disabled and " | disabled" or ""
-    local placeLocked = ""
-
-    if type(entry.PlaceIds) == "table" and #entry.PlaceIds > 0 then
-        placeLocked = " | place locked"
-    end
-
-    return "Status: "
-        .. tostring(entry.Status or "Unknown")
-        .. "\nVersion: "
-        .. tostring(entry.Version or "0.0.0")
-        .. "\n"
-        .. tostring(entry.Description or "No description.")
-        .. "\nType: "
-        .. sourceType
-        .. disabled
-        .. placeLocked
-end
-
-local function selectScript(scriptName)
-    state.SelectedScript = scriptName
-    state.PendingEntry = nil
-    state.PendingAt = 0
-
-    local entry = findEntry(state.SelectedCategory, state.SelectedScript)
-    safeSetLabel(state.Gui.SelectedLabel, entry and tostring(entry.Name) or "Selected", describeEntry(entry))
-    setStatus(entry and ("Selected " .. tostring(entry.Name)) or "Select a script")
-end
-
-local function selectCategory(category)
-    state.SelectedCategory = category
-    state.PendingEntry = nil
-    state.PendingAt = 0
-
-    local scripts = scriptsForCategory(category)
-    if state.Gui.ScriptList and type(state.Gui.ScriptList.refresh_options) == "function" then
-        state.Gui.ScriptList.refresh_options(scripts)
-    end
-
-    local firstScript = scripts[1]
-    if firstScript == "No scripts" then
-        firstScript = nil
-    end
-
-    selectScript(firstScript)
 end
 
 local function fetchRemote(url)
@@ -1532,11 +1288,11 @@ local function runSource(entry, source)
         if ok then
             state.RunCount = state.RunCount + 1
             setStatus("Executed " .. tostring(entry.Name))
-            notify(SCRIPT_NAME, "Executed " .. tostring(entry.Name), 4)
+            notify(name, "Executed " .. tostring(entry.Name), 4)
         else
             state.FailCount = state.FailCount + 1
             setStatus("Runtime error in " .. tostring(entry.Name))
-            notify(SCRIPT_NAME, tostring(err), 6)
+            notify(name, tostring(err), 6)
             debugWarn("script runtime failed:", err)
         end
 
@@ -1553,19 +1309,19 @@ end
 local function executeEntry(entry)
     if not entry then
         setStatus("No script selected")
-        notify(SCRIPT_NAME, "Select a script first.", 4)
+        notify(name, "Select a script first.", 4)
         return
     end
 
     if state.Running then
-        notify(SCRIPT_NAME, "A script is already starting.", 3)
+        notify(name, "A script is already starting.", 3)
         return
     end
 
     if not canEntryRunOnExecutor(entry) then
         setStatus("Unsupported executor")
         notify(
-            SCRIPT_NAME,
+            name,
             tostring(state.ExecutorName) .. " is blacklisted for this script.",
             5
         )
@@ -1574,19 +1330,19 @@ local function executeEntry(entry)
 
     if isOnUpdateStatus(entry.Status) then
         setStatus("On update: " .. tostring(entry.Name))
-        notify(SCRIPT_NAME, "This script is on update and cannot be loaded yet.", 5)
+        notify(name, "This script is on update and cannot be loaded yet.", 5)
         return
     end
 
     if entry.Disabled then
         setStatus("Disabled: " .. tostring(entry.Name))
-        notify(SCRIPT_NAME, "This script is disabled in supported.json.", 5)
+        notify(name, "This script is disabled in supported.json.", 5)
         return
     end
 
     if not hasPlaceAccess(entry) then
         setStatus("Wrong place for " .. tostring(entry.Name))
-        notify(SCRIPT_NAME, "This script is locked to another PlaceId.", 5)
+        notify(name, "This script is locked to another PlaceId.", 5)
         return
     end
 
@@ -1601,7 +1357,7 @@ local function executeEntry(entry)
             if ok then
                 state.RunCount = state.RunCount + 1
                 setStatus("Executed " .. tostring(entry.Name))
-                notify(SCRIPT_NAME, "Executed " .. tostring(entry.Name), 4)
+                notify(name, "Executed " .. tostring(entry.Name), 4)
 
                 if config.Loader.AutoCloseAfterRun then
                     task.delay(0.15, unload)
@@ -1609,7 +1365,7 @@ local function executeEntry(entry)
             else
                 state.FailCount = state.FailCount + 1
                 setStatus("Runtime error in " .. tostring(entry.Name))
-                notify(SCRIPT_NAME, tostring(err), 6)
+                notify(name, tostring(err), 6)
                 debugWarn("callback failed:", err)
             end
 
@@ -1627,7 +1383,7 @@ local function executeEntry(entry)
             state.Running = false
             state.FailCount = state.FailCount + 1
             setStatus("Fetch failed")
-            notify(SCRIPT_NAME, result, 6)
+            notify(name, result, 6)
             updateStats()
             return
         end
@@ -1640,7 +1396,7 @@ local function executeEntry(entry)
         state.Running = false
         state.FailCount = state.FailCount + 1
         setStatus("Launch failed")
-        notify(SCRIPT_NAME, err, 6)
+        notify(name, err, 6)
         updateStats()
     end
 end
@@ -1649,7 +1405,7 @@ runSelected = function()
     local entry = findEntry(state.SelectedCategory, state.SelectedScript)
     if not entry then
         setStatus("No script selected")
-        notify(SCRIPT_NAME, "Select a script first.", 4)
+        notify(name, "Select a script first.", 4)
         return
     end
 
@@ -1678,7 +1434,7 @@ runSelected = function()
             state.PendingEntry = entry
             state.PendingAt = now
             setStatus("Click Run again: " .. tostring(entry.Name))
-            notify(SCRIPT_NAME, "Click Run again within 5 seconds.", 4)
+            notify(name, "Click Run again within 5 seconds.", 4)
             return
         end
     end
@@ -1693,7 +1449,7 @@ local function createUi(library)
         name = "vyno.",
         suffix = "tech",
         gameInfo = "Executor: " .. tostring(state.ExecutorName),
-        size = MAIN_WINDOW_SIZE,
+        size = UDim2.new(0, 720, 0, 565),
     })
 
     state.Window = window
@@ -1708,7 +1464,7 @@ local function createUi(library)
 
     window:seperator({ name = "Scripts" })
 
-    local catalog = state.Catalog or CURRENT_CATALOG
+    local catalog = state.Catalog or {}
     if #catalog == 0 then
         local Empty = window:tab({
             name = "No games",
@@ -1761,7 +1517,7 @@ local function createUi(library)
     loaderSection:button({
         name = "Unload",
         callback = function()
-            notify(SCRIPT_NAME, "Unloading loader.", 2)
+            notify(name, "Unloading loader.", 2)
             task.delay(0.15, unload)
         end,
     })
@@ -1769,54 +1525,32 @@ local function createUi(library)
     fadeInWindow(window)
 
     task.defer(function()
-        notify(SCRIPT_NAME, "Loader ready.", 4)
+        notify(name, "Loader ready.", 4)
     end)
 end
 
 local function prepareCatalog()
     setPreloader(0.14, "Getting game list...")
 
-    local manifestLoaded = false
-    local manifestErr = nil
-
-    if type(REMOTE_MANIFEST.Url) == "string" and REMOTE_MANIFEST.Url ~= "" then
-        manifestLoaded, manifestErr = fetchManifest()
-    else
-        manifestErr = "Remote manifest URL is not configured."
-    end
-
+    local manifestLoaded, manifestErr = fetchManifest()
     if not manifestLoaded then
-        if REMOTE_MANIFEST.Required then
-            return false, manifestErr
-        end
-
-        state.Catalog = CURRENT_CATALOG
-        state.ManifestMeta = {
-            Name = "Local fallback",
-            Version = SCRIPT_VERSION,
-        }
-
-        debugWarn("manifest fallback:", manifestErr)
+        return false, manifestErr
     end
 
     setPreloader(0.28, "Checking executor...")
 
     local executorLoaded, executorErr = fetchExecutorManifest()
     if not executorLoaded then
-        if EXECUTOR_MANIFEST.Required then
-            return false, executorErr
-        end
-
-        debugWarn("executor manifest fallback:", executorErr)
+        return false, executorErr
     end
 
-    local filteredCatalog, hiddenCount = filterCatalogForExecutor(state.Catalog or CURRENT_CATALOG)
+    local filteredCatalog, hiddenCount = filterCatalogForExecutor(state.Catalog)
     state.Catalog = filteredCatalog
     state.FilteredGameCount = hiddenCount
 
     setPreloader(0.42, "Caching game images...")
 
-    local catalog = state.Catalog or CURRENT_CATALOG
+    local catalog = state.Catalog or {}
     local total = math.max(#catalog, 1)
 
     for index, entry in ipairs(catalog) do
@@ -1854,7 +1588,7 @@ local function bootstrap()
     local ready, missing = getExecutorReadiness()
     if not ready then
         setPreloader(1, "Executor is missing: " .. table.concat(missing, ", "))
-        notify(SCRIPT_NAME, "Executor is missing: " .. table.concat(missing, ", "), 6, true)
+        notify(name, "Executor is missing: " .. table.concat(missing, ", "), 6, true)
         task.wait(2)
         unload()
         return
@@ -1863,7 +1597,7 @@ local function bootstrap()
     local prepared, prepareErr = prepareCatalog()
     if not prepared then
         setPreloader(1, "Game list failed.")
-        notify(SCRIPT_NAME, tostring(prepareErr), 6, true)
+        notify(name, tostring(prepareErr), 6, true)
         task.wait(2)
         unload()
         return
@@ -1882,7 +1616,7 @@ local function bootstrap()
     local ok, err = pcall(createUi, library)
     if not ok then
         setPreloader(1, "Interface failed.")
-        notify(SCRIPT_NAME, "UI initialization failed.", 5, true)
+        notify(name, "UI initialization failed.", 5, true)
         debugWarn("ui init failed:", err)
         task.wait(2)
         unload()
