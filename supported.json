@@ -1,16 +1,14 @@
 {
-  "name": "gandoni",
-  "version": "1.1",
   "games": [
     {
-      "id": "test",
-      "name": "Test Script",
-      "category": "Shooter/HvH",
+      "id": "cbro-legacy",
+      "name": "Counter-Blox [Legacy]",
+      "category": "Legacy vyno.tech",
       "status": "Discontinued",
-      "version": "0.1 Legacy",
-      "description": "Test for my penis",
-      "banner": "assets/loader-self-test.png",
-      "script": "scripts/test.lua",
+      "version": "dev. build",
+      "description": "Legacy build of vyno.tech for CB:RO, for 11.06.2026 undetected, not bannable <3",
+      "banner": "assets/cbro.png",
+      "script": "scripts/cbro-legacy.lua",
       "disabled": false
     }
   ]
